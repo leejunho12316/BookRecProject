@@ -1,0 +1,92 @@
+from bs4 import BeautifulSoup
+from selenium import webdriver
+import time
+import pandas as pd
+
+# 교보 크롤링 
+# 처음 교보문고 페이지를 이동 후 전체 카테고리에서 하나 선택(ex 소설 , 시/에세이 ...) 후 url로 넘겨주기
+kyobo_url = "https://product.kyobobook.co.kr/category/KOR/01#?type=home"
+
+wd = webdriver.Chrome()
+wd.get(kyobo_url)
+
+# 오류 방지 2초 대기
+time.sleep(2)
+
+# soup 사용을 위한 page html코드 가져오기 
+html = wd.page_source
+soup = BeautifulSoup(html, 'html.parser')
+
+page_domains = []
+
+# 여러 카테고리 크롤링을 위한 page_id 가져오기
+page_id_li = soup.find_all("li", class_="snb_item")
+
+for item1 in page_id_li:
+    a_tag = item1.find("a", class_="snb_link")
+    if a_tag and a_tag.has_attr("href"):
+        page_id = a_tag["href"]
+        page_domains.append(page_id)
+
+result = []
+num =1
+# 크롤링 페이지 이동 
+for page_domain in page_domains:
+    #크롤링 대상 페이지는 판매순, 20개씩로 정렬 
+    product_url_id = f"{page_domain}#?page=1&type=all&per=20&sort=sel"
+    wd.get(product_url_id)
+    
+    # 오류 방지 2초 대기 
+    time.sleep(2)
+
+    html = wd.page_source
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # 상품 page 이동을 위해 각 상품 id 가져오기 
+    book_id_ol = soup.find("ol", class_="prod_list")
+    book_ids = book_id_ol.find_all("li", class_="prod_item")
+
+    for item2 in book_ids:
+        book_id = item2.get("data-id")
+        if book_id:
+            print(f"{num}번째 책 입니다.")
+            num +=1
+            #각 상품 url로 이동 
+            product_url = f"https://product.kyobobook.co.kr/detail/{book_id}"
+            wd.get(product_url)
+            
+            # 오류 방지 2초 대기 
+            time.sleep(2)
+
+            html = wd.page_source
+            soup = BeautifulSoup(html, 'html.parser')
+
+            #필요한 값 추출하기
+            #책 이름(없으면 N/A)
+            book_name = soup.find("span", class_="prod_title").text.strip() if soup.find("span", class_="prod_title") else "N/A"
+            #책 작가(없으면 N/A)
+            book_author_div = soup.find("div", class_="author")
+            book_author = book_author_div.find("a").text.strip() if book_author_div and book_author_div.find("a") else "N/A"
+
+            #책 장르(없으면 N/A)
+            book_genre_li = soup.find_all("li", class_="category_list_item")
+            book_genre = book_genre_li[0].text.strip() if book_genre_li else "N/A"
+
+            #책 ISBN(없으면 N/A)
+            book_ISBN_div = soup.find("div", class_="tbl_row_wrap")
+            book_ISBN_int = book_ISBN_div.find("td").text.strip() if book_ISBN_div and book_ISBN_div.find("td") else "N/A"
+            book_ISBN = str(book_ISBN_int)
+            print(book_ISBN)
+            
+            #책 소개(없으면 N/A)
+            book_intro = soup.find("div", class_="intro_bottom").text.strip() if soup.find("div", class_="intro_bottom") else "N/A"
+
+            #크롤링 한 값들을 리스트에 저장 
+            result.append([book_name, book_author, book_genre, book_ISBN, book_intro])
+
+# pandas를 활용 엑셀 저장
+df = pd.DataFrame(result, columns=['책 이름', '작가', '장르', 'ISBN', '책 소개'])
+df.to_csv("교보크롤링_isbn_test2.csv", index=False)
+
+# webdriver 종료 
+wd.quit()
